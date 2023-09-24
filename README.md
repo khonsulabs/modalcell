@@ -53,8 +53,8 @@ access to shared references without an intermediate type. With this type, the
 Rust compiler enforces correctness, while `RefCell` requires runtime checks.
 
 This crate still performs one check at runtime: is the mode being passed the
-same one that was used to create the cell. Because this is a logic bug, doing
-this will result in a panic.
+same one that was used to create the cell. Because this is a logic bug, passing
+an incorrect mode will result in a panic.
 
 This crate also provides an implementation that allows using this mode of data
 access in multi-threaded code:
