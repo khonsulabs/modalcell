@@ -1,0 +1,3 @@
+(function() {var implementors = {
+"modalcell":[["impl&lt;Mode&gt; <a class=\"trait\" href=\"https://doc.rust-lang.org/1.72.1/core/marker/trait.Copy.html\" title=\"trait core::marker::Copy\">Copy</a> for <a class=\"struct\" href=\"modalcell/struct.ExclusiveMode.html\" title=\"struct modalcell::ExclusiveMode\">ExclusiveMode</a>&lt;'_, Mode&gt;<span class=\"where fmt-newline\">where\n    Mode: <a class=\"trait\" href=\"modalcell/trait.Mode.html\" title=\"trait modalcell::Mode\">Mode</a>,</span>"]]
+};if (window.register_implementors) {window.register_implementors(implementors);} else {window.pending_implementors = implementors;}})()
