@@ -1,5 +1,9 @@
 # ModalCell
 
+[![crate version](https://img.shields.io/crates/v/modalcell.svg)](https://crates.io/crates/modalcell)
+[![Live Build Status](https://img.shields.io/github/actions/workflow/status/khonsulabs/modalcell/rust.yml?branch=main)](https://github.com/khonsulabs/modalcell/actions?query=workflow:Tests)
+[![Documentation for `main` branch](https://img.shields.io/badge/docs-main-informational)](https://khonsulabs.github.io/modalcell/main/modalcell/)
+
 ModalCell provides an approach for using Rust's borrow checker to enforce access
 to a value via an associated mode.
 
