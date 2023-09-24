@@ -1,4 +1,4 @@
-//! A cell type using a shared tag to control mutable access.
+#![doc = include_str!("../README.md")]
 #![warn(clippy::pedantic, missing_docs)]
 
 use std::cell::UnsafeCell;
@@ -6,120 +6,175 @@ use std::ops::{Deref, DerefMut};
 use std::rc::Rc;
 use std::sync::Arc;
 
-/// A tag that allows read-only access to its associated [`TagCell`]s.
-pub struct ReadTag<Tag>
+/// A tag that allows read-only access to its associated [`ExclusiveCell`]s.
+pub struct SharedMode<Mode>
 where
-    Tag: TagType,
+    Mode: crate::Mode,
 {
-    tag: Tag::Container<()>,
+    tag: Mode::Container<()>,
 }
 
-impl<Tag> Default for ReadTag<Tag>
+impl<Mode> Default for SharedMode<Mode>
 where
-    Tag: TagType,
+    Mode: crate::Mode,
 {
     fn default() -> Self {
-        Self { tag: Tag::new(()) }
+        Self { tag: Mode::new(()) }
     }
 }
 
-/// A tag that allows mutable access to its associated [`TagCell`]s.
-#[derive(Clone, Copy)]
-pub struct WriteTag<'a, Tag>(&'a ReadTag<Tag>)
-where
-    Tag: TagType;
+impl SharedMode<ThreadSafe> {
+    /// Returns a new instance that can be used in multi-threaded code.
+    #[must_use]
+    pub fn new_threadsafe() -> Self {
+        Self::default()
+    }
+}
 
-impl<Tag> ReadTag<Tag>
+impl SharedMode<SingleThreaded> {
+    /// Returns a new instance that can only be used in single-threaded code.
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+}
+
+impl<Mode> ExclusiveMode<'_, Mode>
 where
-    Tag: TagType,
+    Mode: crate::Mode,
+{
+    /// Returns a new `ExclusiveCell` associated with this mode.
+    pub fn new_cell<T>(&self, value: T) -> ExclusiveCell<T, Mode> {
+        self.0.new_cell(value)
+    }
+}
+
+/// A tag that allows exclusive access to the underlying [`SharedMode`]'s
+/// associated [`ExclusiveCell`]s.
+pub struct ExclusiveMode<'a, Mode>(&'a SharedMode<Mode>)
+where
+    Mode: crate::Mode;
+
+impl<Mode> Clone for ExclusiveMode<'_, Mode>
+where
+    Mode: crate::Mode,
+{
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<Mode> Copy for ExclusiveMode<'_, Mode> where Mode: crate::Mode {}
+
+impl<Mode> SharedMode<Mode>
+where
+    Mode: crate::Mode,
 {
     /// Begin a write session, allowing mutable access to associated
-    /// [`TagCell`]s.
-    pub fn write(&mut self) -> WriteTag<'_, Tag> {
-        WriteTag(self)
+    /// [`ExclusiveCell`]s.
+    pub fn as_exclusive(&mut self) -> ExclusiveMode<'_, Mode> {
+        ExclusiveMode(self)
+    }
+
+    /// Returns a new [`ExclusiveCell`] associated with the underlying
+    /// [`SharedMode`].
+    pub fn new_cell<T>(&self, value: T) -> ExclusiveCell<T, Mode> {
+        ExclusiveCell::new(value, self)
     }
 }
 
-/// A wrapper type that guarantees memory safety using an associated tag.
-pub struct MutableCell<T, Tag>
+/// A wrapper type that guarantees memory safety by only allowing access when
+/// its associated [`ExclusiveMode`] tag is provided.
+pub struct ExclusiveCell<T, Mode>
 where
-    Tag: TagType,
+    Mode: crate::Mode,
 {
-    tag: Tag::Container<()>,
-    data: Tag::Container<UnsafeCell<T>>,
+    tag: Mode::Container<()>,
+    data: Mode::Container<UnsafeCell<T>>,
 }
 
-impl<T, Tag> MutableCell<T, Tag>
+impl<T, Mode> ExclusiveCell<T, Mode>
 where
-    Tag: TagType,
+    Mode: crate::Mode,
 {
-    /// Allocates a new cell containing `value`. The returned cell can only be
-    /// accessed by providing `tag`.
-    pub fn new(value: T, tag: &ReadTag<Tag>) -> Self {
+    fn new(value: T, mode: &SharedMode<Mode>) -> Self {
         Self {
-            tag: tag.tag.clone(),
-            data: Tag::new(UnsafeCell::new(value)),
+            tag: mode.tag.clone(),
+            data: Mode::new(UnsafeCell::new(value)),
         }
     }
 
-    /// Returns a [`RefMut`] providing mutable access to the contained value.
+    /// Returns a [`RefMut`] providing exclusive access to the contained value.
     ///
     /// # Panics
     ///
-    /// This function panics if `tag` is not the same tag that was provided in
-    /// [`TagCell::new`].
-    pub fn write<'collection>(
+    /// This function panics if `mode` is not the same mode that was used to
+    /// create the cell.
+    pub fn get_mut<'mode>(
         &mut self,
-        tag: WriteTag<'collection, Tag>,
-    ) -> RefMut<'_, 'collection, T, Tag> {
-        assert!(Tag::ptr_eq(&tag.0.tag, &self.tag));
+        mode: ExclusiveMode<'mode, Mode>,
+    ) -> RefMut<'_, 'mode, T, Mode> {
+        assert!(Mode::ptr_eq(&mode.0.tag, &self.tag));
         RefMut {
             cell: self,
-            _tag: tag,
+            _mode: mode,
         }
     }
 
     /// Returns a clone of this cell that can only be used to read the
     /// underlying data.
-    pub fn as_read_only(&self) -> ReadOnlyCell<T, Tag> {
-        ReadOnlyCell {
+    pub fn as_shared(&self) -> SharedCell<T, Mode> {
+        SharedCell {
             tag: self.tag.clone(),
             data: self.data.clone(),
         }
     }
 }
 
-/// A read-only reference to a [`TagCell`].
-pub struct ReadOnlyCell<T, Tag>
+unsafe impl<T, Mode> Send for ExclusiveCell<T, Mode>
 where
-    Tag: TagType,
+    Mode: crate::Mode,
+    Mode::Container<T>: Send,
 {
-    tag: Tag::Container<()>,
-    data: Tag::Container<UnsafeCell<T>>,
+}
+unsafe impl<T, Mode> Sync for ExclusiveCell<T, Mode>
+where
+    Mode: crate::Mode,
+    Mode::Container<T>: Sync,
+{
 }
 
-impl<T, Tag> ReadOnlyCell<T, Tag>
+/// A read-only reference to a [`ExclusiveCell`].
+pub struct SharedCell<T, Mode>
 where
-    Tag: TagType,
+    Mode: crate::Mode,
+{
+    tag: Mode::Container<()>,
+    data: Mode::Container<UnsafeCell<T>>,
+}
+
+impl<T, Mode> SharedCell<T, Mode>
+where
+    Mode: crate::Mode,
 {
     /// Returns a read-only reference to the contained value.
     ///
     /// # Panics
     ///
-    /// This function panics if `tag` is not the same tag that was provided in
-    /// [`TagCell::new`].
-    pub fn get<'a>(&'a self, collection: &'a ReadTag<Tag>) -> &'a T {
-        assert!(Tag::ptr_eq(&collection.tag, &self.tag));
-        // SAFETY: Because we have a read-only reference to `collection`, we
+    /// This function panics if `mode` is not the same mode that was used to
+    /// create the cell.
+    pub fn get<'a>(&'a self, mode: &'a SharedMode<Mode>) -> &'a T {
+        assert!(Mode::ptr_eq(&mode.tag, &self.tag));
+        // SAFETY: Because we have a read-only reference to `mode`, we
         // know that no mutable references to the underlying unsace cell can
         // exist.
         unsafe { &*self.data.get() }
     }
 }
 
-impl<T, Tag> Clone for ReadOnlyCell<T, Tag>
+impl<T, Mode> Clone for SharedCell<T, Mode>
 where
-    Tag: TagType,
+    Mode: crate::Mode,
 {
     fn clone(&self) -> Self {
         Self {
@@ -128,47 +183,59 @@ where
         }
     }
 }
-
-/// A wrapper to an exclusive reference to a [`MutableCell`]'s contents.
-pub struct RefMut<'a, 'collection, T, Tag>
+unsafe impl<T, Mode> Send for SharedCell<T, Mode>
 where
-    Tag: TagType,
+    Mode: crate::Mode,
+    Mode::Container<T>: Send,
 {
-    cell: &'a MutableCell<T, Tag>,
-    _tag: WriteTag<'collection, Tag>,
+}
+unsafe impl<T, Mode> Sync for SharedCell<T, Mode>
+where
+    Mode: crate::Mode,
+    Mode::Container<T>: Sync,
+{
 }
 
-impl<T, Tag> Deref for RefMut<'_, '_, T, Tag>
+/// A wrapper to an exclusive reference to an [`ExclusiveCell`]'s contents.
+pub struct RefMut<'a, 'mode, T, Mode>
 where
-    Tag: TagType,
+    Mode: crate::Mode,
+{
+    cell: &'a ExclusiveCell<T, Mode>,
+    _mode: ExclusiveMode<'mode, Mode>,
+}
+
+impl<T, Mode> Deref for RefMut<'_, '_, T, Mode>
+where
+    Mode: crate::Mode,
 {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
         // SAFETY: `RefMut` can only be constructed with an exclusive
-        // 'collection lifetime that comes from mut access to a ReadTag. Since
-        // TagCell cannot be cloned, this ensures no other references can exist
-        // to the underlying value.
+        // 'mode lifetime that comes from mut access to a SharedTag. Since
+        // `ExclusiveCell` cannot be cloned, this ensures no other references
+        // can exist to the underlying value.
         unsafe { &*self.cell.data.get() }
     }
 }
 
-impl<T, Tag> DerefMut for RefMut<'_, '_, T, Tag>
+impl<T, Mode> DerefMut for RefMut<'_, '_, T, Mode>
 where
-    Tag: TagType,
+    Mode: crate::Mode,
 {
     fn deref_mut(&mut self) -> &mut Self::Target {
         // SAFETY: `RefMut` can only be constructed with an exclusive
-        // 'collection lifetime that comes from mut access to a ReadTag. Since
-        // TagCell cannot be cloned, this ensures no other references can exist
-        // to the underlying value.
+        // 'mode lifetime that comes from mut access to a SharedTag. Since
+        // `ExclusiveCell` cannot be cloned, this ensures no other references
+        // can exist to the underlying value.
         unsafe { &mut *self.cell.data.get() }
     }
 }
 
-/// A trait controlling how [`ReadTag`] and all associated types store
+/// A trait controlling how [`SharedMode`] and all associated types store
 /// reference-counted values.
-pub trait TagType {
+pub trait Mode {
     /// The container type used by this tag type.
     type Container<T>: Clone + Deref<Target = T>;
 
@@ -179,10 +246,10 @@ pub trait TagType {
     fn ptr_eq<T>(a: &Self::Container<T>, b: &Self::Container<T>) -> bool;
 }
 
-/// A [`TagType`] that uses [`Arc`] for thread-safety.
+/// A [`Mode`] that uses [`Arc`] for thread-safety.
 pub struct ThreadSafe;
 
-impl TagType for ThreadSafe {
+impl Mode for ThreadSafe {
     type Container<T> = Arc<T>;
 
     fn new<T>(value: T) -> Self::Container<T> {
@@ -194,11 +261,11 @@ impl TagType for ThreadSafe {
     }
 }
 
-/// A [`TagType`] that uses [`Rc`], which is optimized for single-threaded use
+/// A [`Mode`] that uses [`Rc`], which is optimized for single-threaded use
 /// cases.
 pub struct SingleThreaded;
 
-impl TagType for SingleThreaded {
+impl Mode for SingleThreaded {
     type Container<T> = Rc<T>;
 
     fn new<T>(value: T) -> Self::Container<T> {
@@ -210,37 +277,32 @@ impl TagType for SingleThreaded {
     }
 }
 
-/// A tag that utilizes [`Arc`] for thread safety.
-pub type ThreadsafeTag = ReadTag<ThreadSafe>;
-/// A tag that uses [`Rc`], which is optimized for single-threaded use cases.
-pub type SingleThreadedTag = ReadTag<SingleThreaded>;
-
 #[test]
 fn test_threadsafe() {
-    let mut collection = ThreadsafeTag::default();
-    let mut a = MutableCell::new(1, &collection);
-    let b = a.as_read_only();
+    let mut mode = SharedMode::new_threadsafe();
+    let mut a = ExclusiveCell::new(1, &mode);
+    let b = a.as_shared();
 
-    let writer = collection.write();
-    let mut a_value = a.write(writer);
+    let writer = mode.as_exclusive();
+    let mut a_value = a.get_mut(writer);
     *a_value = 2;
 
-    assert_eq!(*b.get(&collection), 2);
+    assert_eq!(*b.get(&mode), 2);
 
     // *a_value = 3;
 }
 
 #[test]
 fn test_single_threaded() {
-    let mut collection = SingleThreadedTag::default();
-    let mut a = MutableCell::new(1, &collection);
-    let b = a.as_read_only();
+    let mut mode = SharedMode::new();
+    let mut a = ExclusiveCell::new(1, &mode);
+    let b = a.as_shared();
 
-    let writer = collection.write();
-    let mut a_value = a.write(writer);
+    let writer = mode.as_exclusive();
+    let mut a_value = a.get_mut(writer);
     *a_value = 2;
 
-    assert_eq!(*b.get(&collection), 2);
+    assert_eq!(*b.get(&mode), 2);
 
     // *a_value = 3;
 }
