@@ -3,9 +3,9 @@
 its associated <a href="struct.ExclusiveMode.html" title="struct modalcell::ExclusiveMode"><code>ExclusiveMode</code></a> tag is provided.</p>
 </div></details><h2 id="implementations" class="small-section-header">Implementations<a href="#implementations" class="anchor">§</a></h2><div id="implementations-list"><details class="toggle implementors-toggle" open><summary><section id="impl-ExclusiveCell%3CT,+Mode%3E" class="impl"><a class="srclink rightside" href="../src/modalcell/lib.rs.html#96-132">source</a><a href="#impl-ExclusiveCell%3CT,+Mode%3E" class="anchor">§</a><h3 class="code-header">impl&lt;T, Mode&gt; <a class="struct" href="struct.ExclusiveCell.html" title="struct modalcell::ExclusiveCell">ExclusiveCell</a>&lt;T, Mode&gt;<span class="where fmt-newline">where
     Mode: <a class="trait" href="trait.Mode.html" title="trait modalcell::Mode">Mode</a>,</span></h3></section></summary><div class="impl-items"><details class="toggle method-toggle" open><summary><section id="method.get_mut" class="method"><a class="srclink rightside" href="../src/modalcell/lib.rs.html#113-122">source</a><h4 class="code-header">pub fn <a href="#method.get_mut" class="fn">get_mut</a>&lt;'mode&gt;(
-    &amp;mut self,
+    &amp;'mode mut self,
     mode: <a class="struct" href="struct.ExclusiveMode.html" title="struct modalcell::ExclusiveMode">ExclusiveMode</a>&lt;'mode, Mode&gt;
-) -&gt; <a class="struct" href="struct.RefMut.html" title="struct modalcell::RefMut">RefMut</a>&lt;'_, 'mode, T, Mode&gt;</h4></section></summary><div class="docblock"><p>Returns a <a href="struct.RefMut.html" title="struct modalcell::RefMut"><code>RefMut</code></a> providing exclusive access to the contained value.</p>
+) -&gt; <a class="struct" href="struct.RefMut.html" title="struct modalcell::RefMut">RefMut</a>&lt;'_, T, Mode&gt;</h4></section></summary><div class="docblock"><p>Returns a <a href="struct.RefMut.html" title="struct modalcell::RefMut"><code>RefMut</code></a> providing exclusive access to the contained value.</p>
 <h5 id="panics"><a href="#panics">Panics</a></h5>
 <p>This function panics if <code>mode</code> is not the same mode that was used to
 create the cell.</p>

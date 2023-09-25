@@ -402,6 +402,14 @@
 <a href="#402" id="402">402</a>
 <a href="#403" id="403">403</a>
 <a href="#404" id="404">404</a>
+<a href="#405" id="405">405</a>
+<a href="#406" id="406">406</a>
+<a href="#407" id="407">407</a>
+<a href="#408" id="408">408</a>
+<a href="#409" id="409">409</a>
+<a href="#410" id="410">410</a>
+<a href="#411" id="411">411</a>
+<a href="#412" id="412">412</a>
 </pre></div><pre class="rust"><code><span class="attr">#![doc = <span class="macro">include_str!</span>(<span class="string">&quot;../README.md&quot;</span>)]
 #![warn(clippy::pedantic, missing_docs)]
 
@@ -515,9 +523,9 @@
     /// This function panics if `mode` is not the same mode that was used to
     /// create the cell.
     </span><span class="kw">pub fn </span>get_mut&lt;<span class="lifetime">&#39;mode</span>&gt;(
-        <span class="kw-2">&amp;mut </span><span class="self">self</span>,
+        <span class="kw-2">&amp;</span><span class="lifetime">&#39;mode </span><span class="kw-2">mut </span><span class="self">self</span>,
         mode: ExclusiveMode&lt;<span class="lifetime">&#39;mode</span>, Mode&gt;,
-    ) -&gt; RefMut&lt;<span class="lifetime">&#39;_</span>, <span class="lifetime">&#39;mode</span>, T, Mode&gt; {
+    ) -&gt; RefMut&lt;<span class="lifetime">&#39;_</span>, T, Mode&gt; {
         <span class="macro">assert!</span>(Mode::ptr_eq(<span class="kw-2">&amp;</span>mode.<span class="number">0</span>.tag, <span class="kw-2">&amp;</span><span class="self">self</span>.tag));
         RefMut {
             cell: <span class="self">self</span>,
@@ -601,15 +609,15 @@
 }
 
 <span class="doccomment">/// A wrapper to an exclusive reference to an [`ExclusiveCell`]&#39;s contents.
-</span><span class="kw">pub struct </span>RefMut&lt;<span class="lifetime">&#39;a</span>, <span class="lifetime">&#39;mode</span>, T, Mode&gt;
+</span><span class="kw">pub struct </span>RefMut&lt;<span class="lifetime">&#39;a</span>, T, Mode&gt;
 <span class="kw">where
     </span>Mode: <span class="kw">crate</span>::Mode,
 {
     cell: <span class="kw-2">&amp;</span><span class="lifetime">&#39;a </span>ExclusiveCell&lt;T, Mode&gt;,
-    _mode: ExclusiveMode&lt;<span class="lifetime">&#39;mode</span>, Mode&gt;,
+    _mode: ExclusiveMode&lt;<span class="lifetime">&#39;a</span>, Mode&gt;,
 }
 
-<span class="kw">impl</span>&lt;T, Mode&gt; Deref <span class="kw">for </span>RefMut&lt;<span class="lifetime">&#39;_</span>, <span class="lifetime">&#39;_</span>, T, Mode&gt;
+<span class="kw">impl</span>&lt;T, Mode&gt; Deref <span class="kw">for </span>RefMut&lt;<span class="lifetime">&#39;_</span>, T, Mode&gt;
 <span class="kw">where
     </span>Mode: <span class="kw">crate</span>::Mode,
 {
@@ -624,7 +632,7 @@
     }
 }
 
-<span class="kw">impl</span>&lt;T, Mode&gt; DerefMut <span class="kw">for </span>RefMut&lt;<span class="lifetime">&#39;_</span>, <span class="lifetime">&#39;_</span>, T, Mode&gt;
+<span class="kw">impl</span>&lt;T, Mode&gt; DerefMut <span class="kw">for </span>RefMut&lt;<span class="lifetime">&#39;_</span>, T, Mode&gt;
 <span class="kw">where
     </span>Mode: <span class="kw">crate</span>::Mode,
 {
@@ -639,7 +647,15 @@
 
 <span class="doccomment">/// A trait controlling how [`SharedMode`] and all associated types store
 /// reference-counted values.
-</span><span class="kw">pub trait </span>Mode {
+///
+/// # Safety
+///
+/// When `ptr_eq` is provided two `Container`s from separate calls to `new()`,
+/// it always returns false. When `ptr_eq` is provided the same `Container` in
+/// both `a` and `b`, it always returns true.
+///
+/// Breaking this guarantee is undefined behavior.
+</span><span class="kw">pub unsafe trait </span>Mode {
     <span class="doccomment">/// The container type used by this tag type.
     </span><span class="kw">type </span>Container&lt;T&gt;: Clone + Deref&lt;Target = T&gt;;
 
@@ -653,7 +669,7 @@
 <span class="doccomment">/// A [`Mode`] that uses [`Arc`] for thread-safety.
 </span><span class="kw">pub struct </span>ThreadSafe;
 
-<span class="kw">impl </span>Mode <span class="kw">for </span>ThreadSafe {
+<span class="kw">unsafe impl </span>Mode <span class="kw">for </span>ThreadSafe {
     <span class="kw">type </span>Container&lt;T&gt; = Arc&lt;T&gt;;
 
     <span class="kw">fn </span>new&lt;T&gt;(value: T) -&gt; <span class="self">Self</span>::Container&lt;T&gt; {
@@ -669,7 +685,7 @@
 /// cases.
 </span><span class="kw">pub struct </span>SingleThreaded;
 
-<span class="kw">impl </span>Mode <span class="kw">for </span>SingleThreaded {
+<span class="kw">unsafe impl </span>Mode <span class="kw">for </span>SingleThreaded {
     <span class="kw">type </span>Container&lt;T&gt; = Rc&lt;T&gt;;
 
     <span class="kw">fn </span>new&lt;T&gt;(value: T) -&gt; <span class="self">Self</span>::Container&lt;T&gt; {
@@ -716,7 +732,7 @@
     <span class="doccomment">//! This code uses `UnsafeCell` internally, but only has a small amount of
     //! unsafe code. The goal of this crate is to ensure that at compile time,
     //! all Rust borrowing invariants are guaranteed to be upheld. This means
-    //! that it should be impossible to gain access to an `&amp;T` while an `&amp;mut T`
+    //! that it should be impossible to gain access to a `&amp;T` while an `&amp;mut T`
     //! is in existence.
     //!
     //! To prevent this, several design decisions were made about the types in
@@ -733,7 +749,7 @@
     //!   to its value. The returned `RefMut` encompasses both the cell&#39;s
     //!   lifetime and the mode&#39;s lifetime, causing compilation errors to arise
     //!   from invalid usage.
-    //! - `SharedCell::get` requires an `&amp;SharedMode`. `ExclusiveMode` does not
+    //! - `SharedCell::get` requires a `&amp;SharedMode`. `ExclusiveMode` does not
     //!   provide a way to access the `SharedMode` it is wrapping, ensuring that
     //!   the compiler enforces that only either `SharedCell::get` or
     //!   `ExclusiveCell::get_mut` can be accessed at any given line of code.
