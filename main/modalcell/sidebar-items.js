@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"mod":["safety"],"struct":["ExclusiveCell","ExclusiveMode","RefMut","SharedCell","SharedMode","SingleThreaded","ThreadSafe"],"trait":["Mode"]};
+window.SIDEBAR_ITEMS = {"enum":["SingleThreaded"],"mod":["safety","threadsafe"],"struct":["ExclusiveCell","ExclusiveMode","RefMut","SharedCell","SharedMode"],"trait":["Behavior"]};
