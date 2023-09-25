@@ -346,17 +346,29 @@
 <a href="#346" id="346">346</a>
 <a href="#347" id="347">347</a>
 <a href="#348" id="348">348</a>
+<a href="#349" id="349">349</a>
+<a href="#350" id="350">350</a>
+<a href="#351" id="351">351</a>
+<a href="#352" id="352">352</a>
+<a href="#353" id="353">353</a>
+<a href="#354" id="354">354</a>
+<a href="#355" id="355">355</a>
 </pre></div><pre class="rust"><code><span class="attr">#![doc = <span class="macro">include_str!</span>(<span class="string">&quot;../README.md&quot;</span>)]
 #![warn(clippy::pedantic, missing_docs)]
+#![no_std]
 
-</span><span class="kw">use </span>std::cell::UnsafeCell;
-<span class="kw">use </span>std::ops::{Deref, DerefMut};
-<span class="kw">use </span>std::rc::Rc;
+</span><span class="kw">extern crate </span>alloc;
+
+<span class="kw">use </span>alloc::rc::Rc;
+<span class="kw">use </span>core::cell::UnsafeCell;
+<span class="kw">use </span>core::ops::{Deref, DerefMut};
 
 <span class="kw">pub mod </span>safety;
-<span class="kw">pub mod </span>threadsafe;
+<span class="attr">#[cfg(feature = <span class="string">&quot;std&quot;</span>)]
+</span><span class="kw">pub mod </span>threadsafe;
 
-<span class="kw">use </span><span class="kw">crate</span>::threadsafe::ThreadSafe;
+<span class="attr">#[cfg(feature = <span class="string">&quot;std&quot;</span>)]
+</span><span class="kw">use </span><span class="kw">crate</span>::threadsafe::ThreadSafe;
 
 <span class="doccomment">/// A tag that allows read-only access to its associated [`ExclusiveCell`]s.
 </span><span class="kw">pub struct </span>SharedMode&lt;Behavior = SingleThreaded&gt;
@@ -377,7 +389,8 @@
     }
 }
 
-<span class="kw">impl </span>SharedMode&lt;ThreadSafe&gt; {
+<span class="attr">#[cfg(feature = <span class="string">&quot;std&quot;</span>)]
+</span><span class="kw">impl </span>SharedMode&lt;ThreadSafe&gt; {
     <span class="doccomment">/// Returns a new instance that can be used in multi-threaded code.
     </span><span class="attr">#[must_use]
     </span><span class="kw">pub fn </span>new_threadsafe() -&gt; <span class="self">Self </span>{
@@ -666,6 +679,7 @@
 }
 
 <span class="attr">#[test]
+#[cfg(feature = <span class="string">&quot;std&quot;</span>)]
 </span><span class="kw">fn </span>test_threadsafe() {
     <span class="kw">let </span><span class="kw-2">mut </span>mode = SharedMode::new_threadsafe();
     <span class="kw">let </span><span class="kw-2">mut </span>a = ExclusiveCell::new(<span class="number">1</span>, <span class="kw-2">&amp;</span>mode);
