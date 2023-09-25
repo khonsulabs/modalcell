@@ -4,22 +4,28 @@
 use std::cell::UnsafeCell;
 use std::ops::{Deref, DerefMut};
 use std::rc::Rc;
-use std::sync::Arc;
+
+pub mod safety;
+pub mod threadsafe;
+
+use crate::threadsafe::ThreadSafe;
 
 /// A tag that allows read-only access to its associated [`ExclusiveCell`]s.
-pub struct SharedMode<Mode>
+pub struct SharedMode<Behavior = SingleThreaded>
 where
-    Mode: crate::Mode,
+    Behavior: crate::Behavior,
 {
-    tag: Mode::Container<()>,
+    tag: Behavior::Container<()>,
 }
 
-impl<Mode> Default for SharedMode<Mode>
+impl<Behavior> Default for SharedMode<Behavior>
 where
-    Mode: crate::Mode,
+    Behavior: crate::Behavior,
 {
     fn default() -> Self {
-        Self { tag: Mode::new(()) }
+        Self {
+            tag: Behavior::new(()),
+        }
     }
 }
 
@@ -39,68 +45,68 @@ impl SharedMode<SingleThreaded> {
     }
 }
 
-impl<Mode> ExclusiveMode<'_, Mode>
+impl<Behavior> ExclusiveMode<'_, Behavior>
 where
-    Mode: crate::Mode,
+    Behavior: crate::Behavior,
 {
     /// Returns a new `ExclusiveCell` associated with this mode.
-    pub fn new_cell<T>(&self, value: T) -> ExclusiveCell<T, Mode> {
+    pub fn new_cell<T>(&self, value: T) -> ExclusiveCell<T, Behavior> {
         self.0.new_cell(value)
     }
 }
 
 /// A tag that allows exclusive access to the underlying [`SharedMode`]'s
 /// associated [`ExclusiveCell`]s.
-pub struct ExclusiveMode<'a, Mode>(&'a SharedMode<Mode>)
+pub struct ExclusiveMode<'a, Behavior = SingleThreaded>(&'a SharedMode<Behavior>)
 where
-    Mode: crate::Mode;
+    Behavior: crate::Behavior;
 
-impl<Mode> Clone for ExclusiveMode<'_, Mode>
+impl<Behavior> Clone for ExclusiveMode<'_, Behavior>
 where
-    Mode: crate::Mode,
+    Behavior: crate::Behavior,
 {
     fn clone(&self) -> Self {
         *self
     }
 }
 
-impl<Mode> Copy for ExclusiveMode<'_, Mode> where Mode: crate::Mode {}
+impl<Behavior> Copy for ExclusiveMode<'_, Behavior> where Behavior: crate::Behavior {}
 
-impl<Mode> SharedMode<Mode>
+impl<Behavior> SharedMode<Behavior>
 where
-    Mode: crate::Mode,
+    Behavior: crate::Behavior,
 {
     /// Begin a write session, allowing mutable access to associated
     /// [`ExclusiveCell`]s.
-    pub fn as_exclusive(&mut self) -> ExclusiveMode<'_, Mode> {
+    pub fn as_exclusive(&mut self) -> ExclusiveMode<'_, Behavior> {
         ExclusiveMode(self)
     }
 
     /// Returns a new [`ExclusiveCell`] associated with the underlying
     /// [`SharedMode`].
-    pub fn new_cell<T>(&self, value: T) -> ExclusiveCell<T, Mode> {
+    pub fn new_cell<T>(&self, value: T) -> ExclusiveCell<T, Behavior> {
         ExclusiveCell::new(value, self)
     }
 }
 
 /// A wrapper type that guarantees memory safety by only allowing access when
 /// its associated [`ExclusiveMode`] tag is provided.
-pub struct ExclusiveCell<T, Mode>
+pub struct ExclusiveCell<T, Behavior = SingleThreaded>
 where
-    Mode: crate::Mode,
+    Behavior: crate::Behavior,
 {
-    tag: Mode::Container<()>,
-    data: Mode::Container<UnsafeCell<T>>,
+    tag: Behavior::Container<()>,
+    data: Behavior::Container<UnsafeCell<T>>,
 }
 
-impl<T, Mode> ExclusiveCell<T, Mode>
+impl<T, Behavior> ExclusiveCell<T, Behavior>
 where
-    Mode: crate::Mode,
+    Behavior: crate::Behavior,
 {
-    fn new(value: T, mode: &SharedMode<Mode>) -> Self {
+    fn new(value: T, mode: &SharedMode<Behavior>) -> Self {
         Self {
             tag: mode.tag.clone(),
-            data: Mode::new(UnsafeCell::new(value)),
+            data: Behavior::new(UnsafeCell::new(value)),
         }
     }
 
@@ -112,9 +118,31 @@ where
     /// create the cell.
     pub fn get_mut<'mode>(
         &'mode mut self,
-        mode: ExclusiveMode<'mode, Mode>,
-    ) -> RefMut<'_, T, Mode> {
-        assert!(Mode::ptr_eq(&mode.0.tag, &self.tag));
+        mode: ExclusiveMode<'mode, Behavior>,
+    ) -> RefMut<'_, T, Behavior> {
+        assert!(Behavior::ptr_eq(&mode.0.tag, &self.tag));
+        RefMut {
+            cell: self,
+            _mode: mode,
+        }
+    }
+
+    /// Returns a [`RefMut`] providing exclusive access to the contained value.
+    ///
+    /// # Panics
+    ///
+    /// This function panics when `debug_assertions` are enabled and `mode` is
+    /// not the same mode that was used to create the cell.
+    ///
+    /// # Safety
+    ///
+    /// When compiled with `debug_assertions` disabled, undefined behavior may
+    /// result if `mode` is not the same mode that was used to create the cell.
+    pub unsafe fn get_mut_unchecked<'mode>(
+        &'mode mut self,
+        mode: ExclusiveMode<'mode, Behavior>,
+    ) -> RefMut<'_, T, Behavior> {
+        debug_assert!(Behavior::ptr_eq(&mode.0.tag, &self.tag));
         RefMut {
             cell: self,
             _mode: mode,
@@ -123,7 +151,7 @@ where
 
     /// Returns a clone of this cell that can only be used to read the
     /// underlying data.
-    pub fn as_shared(&self) -> SharedCell<T, Mode> {
+    pub fn as_shared(&self) -> SharedCell<T, Behavior> {
         SharedCell {
             tag: self.tag.clone(),
             data: self.data.clone(),
@@ -131,31 +159,31 @@ where
     }
 }
 
-unsafe impl<T, Mode> Send for ExclusiveCell<T, Mode>
+unsafe impl<T, Behavior> Send for ExclusiveCell<T, Behavior>
 where
-    Mode: crate::Mode,
-    Mode::Container<T>: Send,
+    Behavior: crate::Behavior,
+    Behavior::Container<T>: Send,
 {
 }
-unsafe impl<T, Mode> Sync for ExclusiveCell<T, Mode>
+unsafe impl<T, Behavior> Sync for ExclusiveCell<T, Behavior>
 where
-    Mode: crate::Mode,
-    Mode::Container<T>: Sync,
+    Behavior: crate::Behavior,
+    Behavior::Container<T>: Sync,
 {
 }
 
 /// A read-only reference to a [`ExclusiveCell`].
-pub struct SharedCell<T, Mode>
+pub struct SharedCell<T, Behavior = SingleThreaded>
 where
-    Mode: crate::Mode,
+    Behavior: crate::Behavior,
 {
-    tag: Mode::Container<()>,
-    data: Mode::Container<UnsafeCell<T>>,
+    tag: Behavior::Container<()>,
+    data: Behavior::Container<UnsafeCell<T>>,
 }
 
-impl<T, Mode> SharedCell<T, Mode>
+impl<T, Behavior> SharedCell<T, Behavior>
 where
-    Mode: crate::Mode,
+    Behavior: crate::Behavior,
 {
     /// Returns a read-only reference to the contained value.
     ///
@@ -163,8 +191,27 @@ where
     ///
     /// This function panics if `mode` is not the same mode that was used to
     /// create the cell.
-    pub fn get<'a>(&'a self, mode: &'a SharedMode<Mode>) -> &'a T {
-        assert!(Mode::ptr_eq(&mode.tag, &self.tag));
+    pub fn get<'a>(&'a self, mode: &'a SharedMode<Behavior>) -> &'a T {
+        assert!(Behavior::ptr_eq(&mode.tag, &self.tag));
+        // SAFETY: Because we have a read-only reference to `mode`, we
+        // know that no mutable references to the underlying unsace cell can
+        // exist.
+        unsafe { &*self.data.get() }
+    }
+
+    /// Returns a read-only reference to the contained value.
+    ///
+    /// # Panics
+    ///
+    /// This function panics when `debug_assertions` are enabled and `mode` is
+    /// not the same mode that was used to create the cell.
+    ///
+    /// # Safety
+    ///
+    /// When compiled with `debug_assertions` disabled, undefined behavior may
+    /// result if `mode` is not the same mode that was used to create the cell.
+    pub unsafe fn get_unchecked<'a>(&'a self, mode: &'a SharedMode<Behavior>) -> &'a T {
+        debug_assert!(Behavior::ptr_eq(&mode.tag, &self.tag));
         // SAFETY: Because we have a read-only reference to `mode`, we
         // know that no mutable references to the underlying unsace cell can
         // exist.
@@ -172,9 +219,9 @@ where
     }
 }
 
-impl<T, Mode> Clone for SharedCell<T, Mode>
+impl<T, Behavior> Clone for SharedCell<T, Behavior>
 where
-    Mode: crate::Mode,
+    Behavior: crate::Behavior,
 {
     fn clone(&self) -> Self {
         Self {
@@ -183,31 +230,31 @@ where
         }
     }
 }
-unsafe impl<T, Mode> Send for SharedCell<T, Mode>
+unsafe impl<T, Behavior> Send for SharedCell<T, Behavior>
 where
-    Mode: crate::Mode,
-    Mode::Container<T>: Send,
+    Behavior: crate::Behavior,
+    Behavior::Container<T>: Send,
 {
 }
-unsafe impl<T, Mode> Sync for SharedCell<T, Mode>
+unsafe impl<T, Behavior> Sync for SharedCell<T, Behavior>
 where
-    Mode: crate::Mode,
-    Mode::Container<T>: Sync,
+    Behavior: crate::Behavior,
+    Behavior::Container<T>: Sync,
 {
 }
 
 /// A wrapper to an exclusive reference to an [`ExclusiveCell`]'s contents.
-pub struct RefMut<'a, T, Mode>
+pub struct RefMut<'a, T, Behavior = SingleThreaded>
 where
-    Mode: crate::Mode,
+    Behavior: crate::Behavior,
 {
-    cell: &'a ExclusiveCell<T, Mode>,
-    _mode: ExclusiveMode<'a, Mode>,
+    cell: &'a ExclusiveCell<T, Behavior>,
+    _mode: ExclusiveMode<'a, Behavior>,
 }
 
-impl<T, Mode> Deref for RefMut<'_, T, Mode>
+impl<T, Behavior> Deref for RefMut<'_, T, Behavior>
 where
-    Mode: crate::Mode,
+    Behavior: crate::Behavior,
 {
     type Target = T;
 
@@ -220,9 +267,9 @@ where
     }
 }
 
-impl<T, Mode> DerefMut for RefMut<'_, T, Mode>
+impl<T, Behavior> DerefMut for RefMut<'_, T, Behavior>
 where
-    Mode: crate::Mode,
+    Behavior: crate::Behavior,
 {
     fn deref_mut(&mut self) -> &mut Self::Target {
         // SAFETY: `RefMut` can only be constructed with an exclusive
@@ -243,7 +290,7 @@ where
 /// both `a` and `b`, it always returns true.
 ///
 /// Breaking this guarantee is undefined behavior.
-pub unsafe trait Mode {
+pub unsafe trait Behavior {
     /// The container type used by this tag type.
     type Container<T>: Clone + Deref<Target = T>;
 
@@ -254,26 +301,11 @@ pub unsafe trait Mode {
     fn ptr_eq<T>(a: &Self::Container<T>, b: &Self::Container<T>) -> bool;
 }
 
-/// A [`Mode`] that uses [`Arc`] for thread-safety.
-pub struct ThreadSafe;
-
-unsafe impl Mode for ThreadSafe {
-    type Container<T> = Arc<T>;
-
-    fn new<T>(value: T) -> Self::Container<T> {
-        Arc::new(value)
-    }
-
-    fn ptr_eq<T>(a: &Self::Container<T>, b: &Self::Container<T>) -> bool {
-        Arc::ptr_eq(a, b)
-    }
-}
-
-/// A [`Mode`] that uses [`Rc`], which is optimized for single-threaded use
+/// A [`Behavior`] that uses [`Rc`], which is optimized for single-threaded use
 /// cases.
-pub struct SingleThreaded;
+pub enum SingleThreaded {}
 
-unsafe impl Mode for SingleThreaded {
+unsafe impl Behavior for SingleThreaded {
     type Container<T> = Rc<T>;
 
     fn new<T>(value: T) -> Self::Container<T> {
@@ -313,100 +345,4 @@ fn test_single_threaded() {
     assert_eq!(*b.get(&mode), 2);
 
     // *a_value = 3;
-}
-
-/// Documentation and doctests attempting to prove the safety of this crate.
-pub mod safety {
-    //! This code uses `UnsafeCell` internally, but only has a small amount of
-    //! unsafe code. The goal of this crate is to ensure that at compile time,
-    //! all Rust borrowing invariants are guaranteed to be upheld. This means
-    //! that it should be impossible to gain access to a `&T` while an `&mut T`
-    //! is in existence.
-    //!
-    //! To prevent this, several design decisions were made about the types in
-    //! this crate:
-    //!
-    //! - `SharedMode` does not implement `Clone`. This ensures the compiler's
-    //!   borrow checking rules on a `SharedMode` value can be extended to cells
-    //!   that are associated with this `SharedMode`.
-    //! - `SharedMode::as_exclusive()` exclusively borrows the `SharedMode` and
-    //!   returns an `ExclusiveMode<'_>`. This lifetime causes the compiler to
-    //!   reject any attempt at using the underlying `&SharedMode` until the
-    //!   lifetime is no longer in use.
-    //! - `ExclusiveCell::get_mut` requires an `ExclusiveMode` to return access
-    //!   to its value. The returned `RefMut` encompasses both the cell's
-    //!   lifetime and the mode's lifetime, causing compilation errors to arise
-    //!   from invalid usage.
-    //! - `SharedCell::get` requires a `&SharedMode`. `ExclusiveMode` does not
-    //!   provide a way to access the `SharedMode` it is wrapping, ensuring that
-    //!   the compiler enforces that only either `SharedCell::get` or
-    //!   `ExclusiveCell::get_mut` can be accessed at any given line of code.
-    //! - `SharedCell` implements `Clone`, but `ExclusiveCell` does not. This
-    //!   upholds Rust's guarantees that only one exclusive reference should be
-    //!   able to exist, while it is valid to have as many shared references as
-    //!   desired.
-    //!
-    //! ## Unable to use `SharedMode` while `ExclusiveMode` exists
-    //!
-    //! Incorrect usage:
-    //!
-    //! ```rust,compile_fail
-    //! use modalcell::SharedMode;
-    //! let mut shared = SharedMode::new();
-    //! let mut exclusive_cell = shared.new_cell(1);
-    //! let shared_cell = exclusive_cell.as_shared();
-    //! let exclusive = shared.as_exclusive();
-    //! *exclusive_cell.get_mut(exclusive) = 2;
-    //! assert_eq!(*shared_cell.get(&shared), 2);
-    //!
-    //! *exclusive_cell.get_mut(exclusive) = 3;
-    //! ```
-    //!
-    //! Correct usage:
-    //!
-    //! ```rust
-    //! use modalcell::SharedMode;
-    //!
-    //! let mut shared = SharedMode::new();
-    //! let mut exclusive_cell = shared.new_cell(1);
-    //! let shared_cell = exclusive_cell.as_shared();
-    //! let exclusive = shared.as_exclusive();
-    //! *exclusive_cell.get_mut(exclusive) = 2;
-    //! assert_eq!(*shared_cell.get(&shared), 2);
-    //!
-    //! // By creating a new exclusive session, the compiler ends the
-    //! // previous `exclusive` borrow at its last usage.
-    //! let exclusive = shared.as_exclusive();
-    //! *exclusive_cell.get_mut(exclusive) = 3;
-    //! ```
-    //!
-    //! ## Unable to get an `ExclusiveMode` while a `SharedMode` is borrowed.
-    //!
-    //! Incorrect usage:
-    //!
-    //! ```rust,compile_fail
-    //! use modalcell::SharedMode;
-    //! let mut shared = SharedMode::new();
-    //! let mut exclusive_cell = shared.new_cell(1);
-    //! let shared_cell = exclusive_cell.as_shared();
-    //! let cell_contents = shared_cell.get(&shared);
-    //! let exclusive = shared.as_exclusive();
-    //! assert_eq!(*cell_contents, 1);
-    //!
-    //! *exclusive_cell.get_mut(exclusive) = 3;
-    //! ```
-    //!
-    //! Correct usage:
-    //!
-    //! ```rust
-    //! use modalcell::SharedMode;
-    //! let mut shared = SharedMode::new();
-    //! let mut exclusive_cell = shared.new_cell(1);
-    //! let shared_cell = exclusive_cell.as_shared();
-    //! let cell_contents = shared_cell.get(&shared);
-    //! assert_eq!(*cell_contents, 1);
-    //!
-    //! let exclusive = shared.as_exclusive();
-    //! *exclusive_cell.get_mut(exclusive) = 3;
-    //! ```
 }

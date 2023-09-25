@@ -1,6 +1,6 @@
 use std::sync::mpsc::{Receiver, SyncSender};
 
-use modalcell::{ExclusiveCell, SharedMode, ThreadSafe};
+use modalcell::threadsafe::{ExclusiveCell, SharedMode};
 
 fn main() {
     let mut shared = SharedMode::new_threadsafe();
@@ -29,9 +29,9 @@ fn main() {
 }
 
 fn counting_thread(
-    mut cell: ExclusiveCell<usize, ThreadSafe>,
-    receiver: Receiver<SharedMode<ThreadSafe>>,
-    sender: SyncSender<SharedMode<ThreadSafe>>,
+    mut cell: ExclusiveCell<usize>,
+    receiver: Receiver<SharedMode>,
+    sender: SyncSender<SharedMode>,
 ) {
     while let Ok(mut shared) = receiver.recv() {
         // Enter exclusive mode. This is a borrow-checker only operation and has
