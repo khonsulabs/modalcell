@@ -19,7 +19,7 @@ let exclusive: ExclusiveMode<'_, _> = shared.as_exclusive();
 // Create a new cell with the initial value of `1`. This cell can be
 // accessed `mut`-ably using an `ExclusiveMode`.
 let mut exclusive_cell: ExclusiveCell<usize, _> = exclusive.new_cell(1);
-// Obtain a SharedCell, which can be converted to an `&T` using a
+// Obtain a SharedCell, which can be converted to a `&T` using a
 // `SharedMode`.
 let shared_cell: SharedCell<usize, _> = exclusive_cell.as_shared();
 
@@ -40,7 +40,7 @@ let exclusive: ExclusiveMode<'_, _> = shared.as_exclusive();
 // Each RefMut tracks the lifetime of the &mut ExclusiveCell<T> as well as
 // the lifetime of the `ExclusiveMode`. This ensures that no `&mut T` can be
 // created without exclusive access to `shared`.
-let mut cell_contents: RefMut<'_, '_, usize, _> = exclusive_cell.get_mut(exclusive);
+let mut cell_contents: RefMut<'_, usize, _> = exclusive_cell.get_mut(exclusive);
 *cell_contents = 2;
 
 assert_eq!(*shared_cell.get(&shared), 2);

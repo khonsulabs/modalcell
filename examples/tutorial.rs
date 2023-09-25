@@ -29,7 +29,7 @@ fn main() {
     // Each RefMut tracks the lifetime of the &mut ExclusiveCell<T> as well as
     // the lifetime of the `ExclusiveMode`. This ensures that no `&mut T` can be
     // created without exclusive access to `shared`.
-    let mut cell_contents: RefMut<'_, '_, usize, _> = exclusive_cell.get_mut(exclusive);
+    let mut cell_contents: RefMut<'_, usize, _> = exclusive_cell.get_mut(exclusive);
     *cell_contents = 2;
 
     assert_eq!(*shared_cell.get(&shared), 2);

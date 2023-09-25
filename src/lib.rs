@@ -111,9 +111,9 @@ where
     /// This function panics if `mode` is not the same mode that was used to
     /// create the cell.
     pub fn get_mut<'mode>(
-        &mut self,
+        &'mode mut self,
         mode: ExclusiveMode<'mode, Mode>,
-    ) -> RefMut<'_, 'mode, T, Mode> {
+    ) -> RefMut<'_, T, Mode> {
         assert!(Mode::ptr_eq(&mode.0.tag, &self.tag));
         RefMut {
             cell: self,
@@ -197,15 +197,15 @@ where
 }
 
 /// A wrapper to an exclusive reference to an [`ExclusiveCell`]'s contents.
-pub struct RefMut<'a, 'mode, T, Mode>
+pub struct RefMut<'a, T, Mode>
 where
     Mode: crate::Mode,
 {
     cell: &'a ExclusiveCell<T, Mode>,
-    _mode: ExclusiveMode<'mode, Mode>,
+    _mode: ExclusiveMode<'a, Mode>,
 }
 
-impl<T, Mode> Deref for RefMut<'_, '_, T, Mode>
+impl<T, Mode> Deref for RefMut<'_, T, Mode>
 where
     Mode: crate::Mode,
 {
@@ -220,7 +220,7 @@ where
     }
 }
 
-impl<T, Mode> DerefMut for RefMut<'_, '_, T, Mode>
+impl<T, Mode> DerefMut for RefMut<'_, T, Mode>
 where
     Mode: crate::Mode,
 {
@@ -235,7 +235,15 @@ where
 
 /// A trait controlling how [`SharedMode`] and all associated types store
 /// reference-counted values.
-pub trait Mode {
+///
+/// # Safety
+///
+/// When `ptr_eq` is provided two `Container`s from separate calls to `new()`,
+/// it always returns false. When `ptr_eq` is provided the same `Container` in
+/// both `a` and `b`, it always returns true.
+///
+/// Breaking this guarantee is undefined behavior.
+pub unsafe trait Mode {
     /// The container type used by this tag type.
     type Container<T>: Clone + Deref<Target = T>;
 
@@ -249,7 +257,7 @@ pub trait Mode {
 /// A [`Mode`] that uses [`Arc`] for thread-safety.
 pub struct ThreadSafe;
 
-impl Mode for ThreadSafe {
+unsafe impl Mode for ThreadSafe {
     type Container<T> = Arc<T>;
 
     fn new<T>(value: T) -> Self::Container<T> {
@@ -265,7 +273,7 @@ impl Mode for ThreadSafe {
 /// cases.
 pub struct SingleThreaded;
 
-impl Mode for SingleThreaded {
+unsafe impl Mode for SingleThreaded {
     type Container<T> = Rc<T>;
 
     fn new<T>(value: T) -> Self::Container<T> {
@@ -312,7 +320,7 @@ pub mod safety {
     //! This code uses `UnsafeCell` internally, but only has a small amount of
     //! unsafe code. The goal of this crate is to ensure that at compile time,
     //! all Rust borrowing invariants are guaranteed to be upheld. This means
-    //! that it should be impossible to gain access to an `&T` while an `&mut T`
+    //! that it should be impossible to gain access to a `&T` while an `&mut T`
     //! is in existence.
     //!
     //! To prevent this, several design decisions were made about the types in
@@ -329,7 +337,7 @@ pub mod safety {
     //!   to its value. The returned `RefMut` encompasses both the cell's
     //!   lifetime and the mode's lifetime, causing compilation errors to arise
     //!   from invalid usage.
-    //! - `SharedCell::get` requires an `&SharedMode`. `ExclusiveMode` does not
+    //! - `SharedCell::get` requires a `&SharedMode`. `ExclusiveMode` does not
     //!   provide a way to access the `SharedMode` it is wrapping, ensuring that
     //!   the compiler enforces that only either `SharedCell::get` or
     //!   `ExclusiveCell::get_mut` can be accessed at any given line of code.
