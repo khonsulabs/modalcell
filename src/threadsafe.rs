@@ -1,4 +1,5 @@
 //! Types for using this crate with multi-threaded code.
+extern crate std;
 
 use std::sync::Arc;
 

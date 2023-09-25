@@ -4,8 +4,15 @@
 [![Live Build Status](https://img.shields.io/github/actions/workflow/status/khonsulabs/modalcell/rust.yml?branch=main)](https://github.com/khonsulabs/modalcell/actions?query=workflow:Tests)
 [![Documentation for `main` branch](https://img.shields.io/badge/docs-main-informational)](https://khonsulabs.github.io/modalcell/main/modalcell/)
 
+**This crate is considered experimental. It contains unsafe code that the author
+is fairly confident in, but the crate author is seeking feedback on its approach
+to safety.**
+
 ModalCell provides an approach for using Rust's borrow checker to enforce access
-to a value via an associated mode.
+to a value via an associated mode. This crate decouples permissions from data,
+but unlike many existing
+[`GhostCell`](https://github.com/matthieu-m/ghost-cell)-like crates, this crate
+splits permissions into two modes: exclusive access and shared.
 
 Consider this example:
 
@@ -116,3 +123,17 @@ fn counting_thread(
     }
 }
 ```
+
+## What is the use case for this?
+
+Consider an application where data access is split into two phases:
+creation/update and read-only. During the creation/update phase, read-only
+references (`SharedCell<T>`) to the underlying data (`ExclusiveCell<T>`) can be
+placed in a structure that is passed onto the read-only phase of the
+application. When the underlying data needs to be updated, control can be passed
+back to the creation/update phase.
+
+This approach would normally require `Rc<RefCell<T>>` or `Arc<Mutex<T>>` and
+incur runtime overhead to ensure that no safety constraints are violated. This
+crate offers an approach that removes nearly all runtime checks by proving the
+code is safe with the Rust compiler.

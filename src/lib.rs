@@ -1,13 +1,18 @@
 #![doc = include_str!("../README.md")]
 #![warn(clippy::pedantic, missing_docs)]
+#![no_std]
 
-use std::cell::UnsafeCell;
-use std::ops::{Deref, DerefMut};
-use std::rc::Rc;
+extern crate alloc;
+
+use alloc::rc::Rc;
+use core::cell::UnsafeCell;
+use core::ops::{Deref, DerefMut};
 
 pub mod safety;
+#[cfg(feature = "std")]
 pub mod threadsafe;
 
+#[cfg(feature = "std")]
 use crate::threadsafe::ThreadSafe;
 
 /// A tag that allows read-only access to its associated [`ExclusiveCell`]s.
@@ -29,6 +34,7 @@ where
     }
 }
 
+#[cfg(feature = "std")]
 impl SharedMode<ThreadSafe> {
     /// Returns a new instance that can be used in multi-threaded code.
     #[must_use]
@@ -318,6 +324,7 @@ unsafe impl Behavior for SingleThreaded {
 }
 
 #[test]
+#[cfg(feature = "std")]
 fn test_threadsafe() {
     let mut mode = SharedMode::new_threadsafe();
     let mut a = ExclusiveCell::new(1, &mode);
